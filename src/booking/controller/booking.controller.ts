@@ -24,11 +24,21 @@ export class BookingController {
 
   @Roles('user', 'admin')
   @Delete(':id')
-  async delete(@Param('id') id: string, @Req() req) {
+  async delete(
+    @Param('id') id: string,
+    @Req() req,
+    @Query('soft') soft?: string,
+  ) {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    await this.bookingService.deleteBooking(id, userId, userRole);
+    const isSoftDelete = soft === 'true';
+
+    if (isSoftDelete) {
+      await this.bookingService.softDelete(id, userId, userRole);
+    } else {
+      await this.bookingService.deleteBooking(id, userId, userRole);
+    }
 
     return { message: 'Booking deleted successfully' };
   }

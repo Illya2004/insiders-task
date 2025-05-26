@@ -34,7 +34,9 @@ export class BookingService {
       take: safeLimit,
     });
 
-    const items = bookings.map((booking) => booking.toDto());
+    const items = bookings
+      .filter((booking) => !booking.isDeleted)
+      .map((booking) => booking.toDto());
 
     return {
       items,
@@ -42,12 +44,41 @@ export class BookingService {
     };
   }
 
+  async softDelete(id: string, currentUserId: string, currentUserRole: string) {
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException(`Booking with id ${id} not found`);
+    }
+
+    if (booking.isDeleted) {
+      throw new ForbiddenException('This booking is already deleted');
+    }
+
+    if (currentUserRole !== 'admin' && booking.user.id !== currentUserId) {
+      throw new ForbiddenException('You can only delete your own bookings');
+    }
+
+    booking.isDeleted = true;
+    await this.bookingRepository.save(booking);
+  }
+
   async create(dto: BookingCreateDto): Promise<BookingResponseDto> {
+    const queryRunner =
+      this.bookingRepository.manager.connection.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction('SERIALIZABLE');
+
     try {
       const { roomId, userId, start_time, end_time } = dto;
 
-      const overlapping = await this.bookingRepository
-        .createQueryBuilder('booking')
+      const overlapping = await queryRunner.manager
+        .createQueryBuilder(Booking, 'booking')
+        .setLock('pessimistic_write')
         .innerJoin('booking.room', 'room')
         .where('room.id = :roomId', { roomId })
         .andWhere(
@@ -66,17 +97,21 @@ export class BookingService {
         );
       }
 
-      const booking = this.bookingRepository.create({
+      const booking = queryRunner.manager.create(Booking, {
         room: { id: roomId },
         user: { id: userId },
         start_time: new Date(start_time),
         end_time: new Date(end_time),
+        isDeleted: false,
       });
 
-      const saved = await this.bookingRepository.save(booking);
+      const saved = await queryRunner.manager.save(booking);
+
+      await queryRunner.commitTransaction();
 
       return saved.toDto();
     } catch (error) {
+      await queryRunner.rollbackTransaction();
       console.error('Booking creation error:', error);
 
       if (error instanceof HttpException) {
@@ -87,6 +122,8 @@ export class BookingService {
         'Виникла помилка під час створення бронювання.',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -95,6 +132,8 @@ export class BookingService {
     currentUserId: string,
     currentUserRole: string,
   ): Promise<void> {
+    await this.isDeleted(id);
+
     const booking = await this.bookingRepository.findOne({
       where: { id },
       relations: ['user'],
@@ -118,5 +157,16 @@ export class BookingService {
     }
 
     await this.bookingRepository.delete(id);
+  }
+
+  async isDeleted(id: string) {
+    const booking = await this.bookingRepository.findOne({ where: { id } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    console.log(booking.isDeleted);
+    if (booking.isDeleted) {
+      throw new ForbiddenException('This booking is not available');
+    }
   }
 }

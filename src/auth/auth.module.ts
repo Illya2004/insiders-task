@@ -12,7 +12,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
-    ConfigModule, // імпортуємо ConfigModule, якщо ще не імпортований
+    ConfigModule,
     TypeOrmModule.forFeature([User]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -20,7 +20,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
-        console.log('JWT_SECRET from env:', secret); // <-- тут лог
+        console.log('JWT_SECRET from env:', secret);
         return {
           secret,
           signOptions: { expiresIn: '1h' },

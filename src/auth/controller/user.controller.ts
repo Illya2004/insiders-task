@@ -6,7 +6,8 @@ import {
   Param,
   Patch,
   Post,
-  Req, UseGuards,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { UserService } from '../service/user.service';
 import { UserUpdate } from '../dto/user/user.update.dto';
